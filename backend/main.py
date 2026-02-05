@@ -104,15 +104,19 @@ async def health():
     except Exception:
         model_loaded = False
     
+    vram_used_mb_val = None
+    if has_cuda and isinstance(gpu_memory, dict):
+        vram_used_mb_val = gpu_memory.get('allocated_gb', 0.0) * 1024
+
     return models.HealthResponse(
-        version=__version__,
-        backend=backend_type,
-        model_size=model_size,
+        status="ok",
         model_loaded=model_loaded,
-        is_default_cached=False,
+        model_downloaded=None,
+        model_size=model_size,
         gpu_available=has_cuda,
         gpu_type=gpu_type,
-        vram_used=gpu_memory,
+        vram_used_mb=vram_used_mb_val,
+        backend_type=backend_type,
     )
 
 

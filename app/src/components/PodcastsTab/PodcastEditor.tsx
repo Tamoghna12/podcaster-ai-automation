@@ -32,9 +32,16 @@ host1: Thank you for tuning in! See you next time.
 export function PodcastEditor() {
   const { projects } = usePodcasts();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const { project, loading, error, startPipeline, pausePipeline, exportAudio } = usePodcastProject(
-    selectedProjectId || '',
-  );
+  const {
+    project,
+    loading,
+    error,
+    updateProject,
+    startPipeline,
+    pausePipeline,
+    exportAudio,
+    isGenerating,
+  } = usePodcastProject(selectedProjectId || '');
   const { profiles } = useProfiles();
 
   const [scriptContent, setScriptContent] = useState('');
@@ -60,8 +67,10 @@ export function PodcastEditor() {
 
     setSaving(true);
     try {
-      // TODO: Implement updateProject
+      await updateProject({ script_content: scriptContent });
       setIsEditing(false);
+    } catch (err) {
+      console.error('Failed to save script:', err);
     } finally {
       setSaving(false);
     }
@@ -145,8 +154,13 @@ export function PodcastEditor() {
             </Button>
           )}
 
-          {project.pipeline_state === 'generating' ? (
-            <Button variant="outline" size="sm" onClick={handlePausePipeline}>
+          {isGenerating ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePausePipeline}
+              disabled={isGenerating && project.pipeline_state !== 'generating'}
+            >
               <Pause className="h-4 w-4 mr-1" />
               Pause
             </Button>

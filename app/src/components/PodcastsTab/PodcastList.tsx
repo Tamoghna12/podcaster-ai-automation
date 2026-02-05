@@ -1,13 +1,15 @@
-import { formatDistanceToNow } from 'date-fns';
-import { FileText, Plus, Trash2 } from 'lucide-react';
+import { formatDistanceToNow, formatDistanceToNow } from 'date-fns';
+import { FileText, FileText, Plus, Plus, Trash2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { usePodcasts } from '@/lib/hooks/usePodcasts';
 import { cn } from '@/lib/utils/cn';
+import { CreatePodcastDialog } from './CreatePodcastDialog';
 
 export function PodcastList() {
-  const { projects, loading, error, deleteProject } = usePodcasts();
+  const { projects, loading, error, deleteProject, refetch } = usePodcasts();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const handleDelete = async (projectId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -19,6 +21,11 @@ export function PodcastList() {
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const handleCreateSuccess = () => {
+    setCreateDialogOpen(false);
+    refetch();
   };
 
   const getStatusColor = (status: string) => {
@@ -145,14 +152,14 @@ export function PodcastList() {
         <Button
           variant="outline"
           className="w-full justify-start gap-2"
-          onClick={() => {
-            // TODO: Open create project dialog
-          }}
+          onClick={() => setCreateDialogOpen(true)}
         >
           <Plus className="h-4 w-4" />
           New Project
         </Button>
       </div>
+
+      <CreatePodcastDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />
     </div>
   );
 }
