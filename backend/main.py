@@ -18,6 +18,9 @@ import tempfile
 import io
 from pathlib import Path
 import uuid
+
+# Import config separately to ensure it's loaded before use
+from . import config as backend_config
 import os
 
 from . import database, models, profiles, history, tts, config, export_import, channels, stories, __version__
