@@ -96,7 +96,7 @@ export interface ModelStatus {
   model_name: string;
   display_name: string;
   downloaded: boolean;
-  downloading: boolean;  // True if download is in progress
+  downloading: boolean; // True if download is in progress
   size_mb?: number;
   loaded: boolean;
 }
@@ -201,4 +201,85 @@ export interface StoryItemTrim {
 
 export interface StoryItemSplit {
   split_time_ms: number;
+}
+
+// Podcast types
+export interface PodcastMetadata {
+  title: string;
+  episode?: string;
+  duration?: string;
+  speakers?: Record<string, string>;
+  description?: string;
+  intro?: PodcastIntroOutro;
+  outro?: PodcastIntroOutro;
+  background_music?: PodcastBackgroundMusic;
+  sound_effects?: Record<string, string>;
+}
+
+export interface PodcastIntroOutro {
+  enabled?: boolean;
+  profile?: string;
+  text?: string;
+  speed?: number;
+  pitch?: number;
+  emotional_intensity?: number;
+}
+
+export interface PodcastBackgroundMusic {
+  enabled?: boolean;
+  file?: string;
+  volume?: number;
+  fade_in?: number;
+  fade_out?: number;
+}
+
+export interface PodcastSegment {
+  id: string;
+  project_id: string;
+  speaker: string;
+  text: string;
+  profile_id?: string;
+  model_size?: '1.7B' | '0.6B';
+  generation_settings?: string; // JSON string
+  marker_type: 'text' | 'sound_effect' | 'music_cue';
+  marker_value?: string;
+  segment_order: number;
+  status: 'pending' | 'generating' | 'completed' | 'failed' | 'skipped';
+  error_message?: string;
+  generation_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PodcastProject {
+  id: string;
+  name: string;
+  description?: string;
+  script_content: string;
+  metadata_json: string;
+  pipeline_state: 'idle' | 'generating' | 'paused' | 'completed' | 'error';
+  current_segment_index: number;
+  total_segments: number;
+  completed_count: number;
+  failed_count: number;
+  skipped_count: number;
+  story_id?: string;
+  created_at: string;
+  updated_at: string;
+  started_at?: string;
+  completed_at?: string;
+  segments: PodcastSegment[];
+}
+
+export interface PodcastProjectCreate {
+  script_content: string;
+}
+
+export interface PodcastProjectUpdate {
+  script_content?: string;
+}
+
+export interface PodcastSegmentUpdate {
+  model_size?: string;
+  generation_settings?: string;
 }

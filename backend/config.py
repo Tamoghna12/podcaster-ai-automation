@@ -57,3 +57,17 @@ def get_models_dir() -> Path:
     path = _data_dir / "models"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def get_sfx_dir() -> Path:
+    """Get sound effects directory path."""
+    path = _data_dir / "sfx"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_music_dir() -> Path:
+    """Get background music directory path."""
+    path = _data_dir / "music"
+    path.mkdir(parents=True, exist_ok=True)
+    return path

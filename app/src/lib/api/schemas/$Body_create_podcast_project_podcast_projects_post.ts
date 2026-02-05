@@ -2,13 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export const $HTTPValidationError = {
+export const $Body_create_podcast_project_podcast_projects_post = {
     properties: {
-        detail: {
-            type: 'array',
-            contains: {
-                type: 'ValidationError',
-            },
+        script_content: {
+            type: 'string',
+            isRequired: true,
         },
     },
 } as const;

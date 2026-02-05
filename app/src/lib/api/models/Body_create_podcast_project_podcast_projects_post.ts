@@ -2,10 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-/**
- * Response model for transcription.
- */
-export type TranscriptionResponse = {
-  text: string;
-  duration: number;
+export type Body_create_podcast_project_podcast_projects_post = {
+    script_content: string;
 };
+

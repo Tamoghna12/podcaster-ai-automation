@@ -3,7 +3,7 @@ Pydantic models for request/response validation.
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 
 
@@ -299,3 +299,99 @@ class StoryItemTrim(BaseModel):
 class StoryItemSplit(BaseModel):
     """Request model for splitting a story item."""
     split_time_ms: int = Field(..., ge=0)  # Time within the clip to split at (relative to clip start)
+
+
+# ============================================================
+# PODCAST PRODUCTION MODELS
+# ============================================================
+
+class PodcastMetadata(BaseModel):
+    """Podcast script metadata from frontmatter."""
+    title: str
+    episode: Optional[str] = None
+    duration: Optional[str] = None
+    speakers: Optional[Dict[str, str]] = None  # speaker -> display name
+    description: Optional[str] = None
+    
+    # Intro configuration with generation parameters
+    intro: Optional[Dict] = None  # {enabled, profile, text, speed, pitch, emotional_intensity}
+    
+    # Outro configuration with generation parameters
+    outro: Optional[Dict] = None  # {enabled, profile, text, speed, pitch, emotional_intensity}
+    
+    # Background music configuration
+    background_music: Optional[Dict] = None  # {enabled, file, volume, fade_in, fade_out}
+    
+    # Sound effects library
+    sound_effects: Optional[Dict[str, str]] = None  # effect_name -> file path
+
+
+class PodcastSegment(BaseModel):
+    """Single podcast segment."""
+    id: str
+    project_id: str
+    speaker: str
+    text: str
+    profile_id: Optional[str] = None
+    
+    # Model configuration
+    model_size: str = "1.7B"  # "1.7B" or "0.6B"
+    generation_settings: Optional[Dict] = None  # speed, pitch, etc.
+    
+    # Marker
+    marker_type: str = "text"  # text, sound_effect, music_cue
+    marker_value: Optional[str] = None
+    
+    # Ordering
+    segment_order: int
+    
+    # State
+    status: str = "pending"  # pending, generating, completed, failed, skipped
+    error_message: Optional[str] = None
+    
+    # Generated output
+    generation_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PodcastProjectResponse(BaseModel):
+    """Response model for podcast project."""
+    id: str
+    name: str
+    description: Optional[str]
+    metadata: PodcastMetadata
+    
+    # Pipeline state
+    pipeline_state: str
+    current_segment_index: int
+    total_segments: int
+    completed_count: int
+    failed_count: int
+    skipped_count: int
+    percentage: float
+    
+    # Output
+    story_id: Optional[str] = None
+    
+    # Timestamps
+    created_at: datetime
+    updated_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class ActivePipelineResponse(BaseModel):
+    """Active pipeline state for SSE."""
+    project_id: str
+    status: str  # idle, generating, paused, completed, error
+    current_segment_index: int
+    total_segments: int
+    completed_count: int
+    failed_count: int
+    skipped_count: int
+    percentage: float
+    current_segment: Optional[PodcastSegment] = None

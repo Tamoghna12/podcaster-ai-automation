@@ -3,6 +3,7 @@ import { AppFrame } from '@/components/AppFrame/AppFrame';
 import { AudioTab } from '@/components/AudioTab/AudioTab';
 import { MainEditor } from '@/components/MainEditor/MainEditor';
 import { ModelsTab } from '@/components/ModelsTab/ModelsTab';
+import { PodcastsTab } from '@/components/PodcastsTab/PodcastsTab';
 import { ServerTab } from '@/components/ServerTab/ServerTab';
 import { Sidebar } from '@/components/Sidebar';
 import { StoriesTab } from '@/components/StoriesTab/StoriesTab';
@@ -10,6 +11,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { VoicesTab } from '@/components/VoicesTab/VoicesTab';
 import { useModelDownloadToast } from '@/lib/hooks/useModelDownloadToast';
 import { MODEL_DISPLAY_NAMES, useRestoreActiveTasks } from '@/lib/hooks/useRestoreActiveTasks';
+
 // Simple platform check that works in both web and Tauri
 const isMacOS = () => navigator.platform.toLowerCase().includes('mac');
 
@@ -114,12 +116,20 @@ const serverRoute = createRoute({
   component: ServerTab,
 });
 
+// Podcasts route
+const podcastsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/podcasts',
+  component: PodcastsTab,
+});
+
 // Route tree
 const routeTree = rootRoute.addChildren([
   indexRoute,
   storiesRoute,
   voicesRoute,
   audioRoute,
+  podcastsRoute,
   modelsRoute,
   serverRoute,
 ]);

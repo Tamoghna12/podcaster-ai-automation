@@ -121,6 +121,71 @@ SessionLocal = None
 _db_path = None
 
 
+class PodcastProject(Base):
+    """Podcast production project - persisted in database."""
+    __tablename__ = "podcast_projects"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False)  # From metadata.title
+    description = Column(Text)  # Optional: summary or episode info
+    script_content = Column(Text, nullable=False)  # Original markdown script
+    metadata_json = Column(Text, nullable=False)  # Serialized PodcastMetadata
+    
+    # Pipeline state (for resumability)
+    pipeline_state = Column(String, default="idle")  # idle, generating, paused, completed, error
+    current_segment_index = Column(Integer, default=0)
+    total_segments = Column(Integer, default=0)
+    completed_count = Column(Integer, default=0)
+    failed_count = Column(Integer, default=0)
+    skipped_count = Column(Integer, default=0)
+    
+    # Story linking (final output)
+    story_id = Column(String, ForeignKey("stories.id"), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)  # When pipeline started
+    completed_at = Column(DateTime, nullable=True)  # When pipeline completed
+
+
+class PodcastSegment(Base):
+    """Individual podcast segment - persisted in database."""
+    __tablename__ = "podcast_segments"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, ForeignKey("podcast_projects.id"), nullable=False)
+    
+    # Content
+    speaker = Column(String, nullable=False)  # e.g., "host1", "jane"
+    text = Column(Text, nullable=False)
+    
+    # Voice profile mapping
+    profile_id = Column(String, ForeignKey("profiles.id"), nullable=True)
+    
+    # Model configuration (per-segment)
+    model_size = Column(String, default="1.7B")  # "1.7B" or "0.6B"
+    generation_settings = Column(Text, nullable=True)  # JSON: speed, pitch, etc.
+    
+    # Marker type
+    marker_type = Column(String, default="text")  # text, sound_effect, music_cue
+    marker_value = Column(Text, nullable=True)  # For markers: effect name, music cue
+    
+    # Ordering
+    segment_order = Column(Integer, nullable=False)
+    
+    # State
+    status = Column(String, default="pending")  # pending, generating, completed, failed, skipped
+    error_message = Column(Text, nullable=True)
+    
+    # Generated output
+    generation_id = Column(String, ForeignKey("generations.id"), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 def init_db():
     """Initialize database tables."""
     global engine, SessionLocal, _db_path
@@ -287,6 +352,85 @@ def _run_migrations(engine):
                 conn.execute(text("ALTER TABLE profiles ADD COLUMN avatar_path VARCHAR"))
                 conn.commit()
                 print("Added avatar_path column to profiles")
+    
+    # Migration: Create podcast_projects table
+    if 'podcast_projects' not in inspector.get_table_names():
+        print("Creating podcast_projects table")
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE podcast_projects (
+                    id VARCHAR PRIMARY KEY,
+                    name VARCHAR NOT NULL,
+                    description TEXT,
+                    script_content TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    pipeline_state VARCHAR DEFAULT 'idle',
+                    current_segment_index INTEGER DEFAULT 0,
+                    total_segments INTEGER DEFAULT 0,
+                    completed_count INTEGER DEFAULT 0,
+                    failed_count INTEGER DEFAULT 0,
+                    skipped_count INTEGER DEFAULT 0,
+                    story_id VARCHAR,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    started_at DATETIME,
+                    completed_at DATETIME,
+                    FOREIGN KEY (story_id) REFERENCES stories(id)
+                )
+            """))
+            conn.commit()
+            print("Created podcast_projects table")
+    
+    # Migration: Create podcast_segments table
+    if 'podcast_segments' not in inspector.get_table_names():
+        print("Creating podcast_segments table")
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE podcast_segments (
+                    id VARCHAR PRIMARY KEY,
+                    project_id VARCHAR NOT NULL,
+                    speaker VARCHAR NOT NULL,
+                    text TEXT NOT NULL,
+                    profile_id VARCHAR,
+                    model_size VARCHAR DEFAULT '1.7B',
+                    generation_settings TEXT,
+                    marker_type VARCHAR DEFAULT 'text',
+                    marker_value TEXT,
+                    segment_order INTEGER NOT NULL,
+                    status VARCHAR DEFAULT 'pending',
+                    error_message TEXT,
+                    generation_id VARCHAR,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (project_id) REFERENCES podcast_projects(id),
+                    FOREIGN KEY (profile_id) REFERENCES profiles(id),
+                    FOREIGN KEY (generation_id) REFERENCES generations(id)
+                )
+            """))
+            conn.commit()
+            print("Created podcast_segments table")
+    
+    # Migration: Add indexes for podcast_segments
+    if 'podcast_segments' in inspector.get_table_names():
+        existing_indexes = [idx['name'] for idx in inspector.get_indexes('podcast_segments')]
+        
+        if 'idx_podcast_segments_project' not in existing_indexes:
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE INDEX idx_podcast_segments_project 
+                    ON podcast_segments(project_id)
+                """))
+                conn.commit()
+                print("Created index idx_podcast_segments_project")
+        
+        if 'idx_podcast_segments_order' not in existing_indexes:
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE INDEX idx_podcast_segments_order 
+                    ON podcast_segments(project_id, segment_order)
+                """))
+                conn.commit()
+                print("Created index idx_podcast_segments_order")
 
 
 def get_db():
