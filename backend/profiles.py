@@ -2,7 +2,7 @@
 Voice profile management module.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from datetime import datetime
 import uuid
 import shutil
@@ -327,7 +327,7 @@ async def create_voice_prompt_for_profile(
     profile_id: str,
     db: Session,
     use_cache: bool = True,
-) -> dict:
+) -> Tuple[dict, bool]:
     """
     Create a combined voice prompt from all samples in a profile.
 
@@ -337,25 +337,28 @@ async def create_voice_prompt_for_profile(
         use_cache: Whether to use cached prompts
 
     Returns:
-        Voice prompt dictionary
+        Tuple of (voice_prompt_dict, was_cached)
     """
     # Get all samples for profile
     samples = db.query(DBProfileSample).filter_by(profile_id=profile_id).all()
 
     if not samples:
-        raise ValueError(f"No samples found for profile {profile_id}")
+        # Return empty prompt for profiles without samples
+        # This allows graceful handling rather than crashing
+        print(f"Warning: Profile {profile_id} has no samples, returning empty voice prompt")
+        return {}, False
 
     tts_model = get_tts_model()
 
     if len(samples) == 1:
         # Single sample - use directly
         sample = samples[0]
-        voice_prompt, _ = await tts_model.create_voice_prompt(
+        voice_prompt, was_cached = await tts_model.create_voice_prompt(
             sample.audio_path,
             sample.reference_text,
             use_cache=use_cache,
         )
-        return voice_prompt
+        return voice_prompt, was_cached
     else:
         # Multiple samples - combine them
         audio_paths = [s.audio_path for s in samples]
@@ -372,22 +375,22 @@ async def create_voice_prompt_for_profile(
         import hashlib
         sample_ids_str = "-".join(sorted([s.id for s in samples]))
         combination_hash = hashlib.md5(sample_ids_str.encode()).hexdigest()[:12]
-        
+
         # Store in cache directory
         cache_dir = _get_cache_dir()
         cache_dir.mkdir(parents=True, exist_ok=True)
         combined_path = cache_dir / f"combined_{profile_id}_{combination_hash}.wav"
-        
+
         # Save combined audio
         save_audio(combined_audio, str(combined_path), 24000)
 
         # Create prompt from combined audio
-        voice_prompt, _ = await tts_model.create_voice_prompt(
+        voice_prompt, was_cached = await tts_model.create_voice_prompt(
             str(combined_path),
             combined_text,
             use_cache=use_cache,
         )
-        return voice_prompt
+        return voice_prompt, was_cached
 
 
 async def upload_avatar(

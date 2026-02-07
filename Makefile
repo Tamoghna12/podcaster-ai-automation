@@ -198,6 +198,39 @@ test-frontend: ## Run frontend tests (requires test script in package.json)
 	fi
 
 # =============================================================================
+# CLI AUTOMATION
+# =============================================================================
+
+.PHONY: generate profiles create-profile template
+
+generate: $(VENV)/bin/activate ## Generate audio from a markdown script (SCRIPT=path/to/script.md)
+	@if [ -z "$(SCRIPT)" ]; then \
+		echo -e "$(YELLOW)Usage: make generate SCRIPT=path/to/script.md [OUTPUT=output.wav] [MODEL=1.7B]$(NC)"; \
+		exit 1; \
+	fi
+	$(PYTHON_VENV) cli.py generate $(SCRIPT) \
+		$(if $(OUTPUT),--output $(OUTPUT)) \
+		$(if $(MODEL),--model-size $(MODEL))
+
+profiles: $(VENV)/bin/activate ## List available voice profiles
+	$(PYTHON_VENV) cli.py profiles
+
+create-profile: $(VENV)/bin/activate ## Create a voice profile (NAME=name SAMPLE=path TEXT="transcript")
+	@if [ -z "$(NAME)" ] || [ -z "$(SAMPLE)" ] || [ -z "$(TEXT)" ]; then \
+		echo -e "$(YELLOW)Usage: make create-profile NAME=\"Alex\" SAMPLE=sample.wav TEXT=\"Hello, I am Alex.\"$(NC)"; \
+		exit 1; \
+	fi
+	$(PYTHON_VENV) cli.py create-profile "$(NAME)" "$(SAMPLE)" "$(TEXT)" $(if $(LANG),--language $(LANG))
+
+template: ## Print a markdown template (TYPE=podcast|narration|tts)
+	@if [ -z "$(TYPE)" ]; then \
+		echo -e "$(YELLOW)Usage: make template TYPE=podcast$(NC)"; \
+		echo -e "  Types: podcast, narration, tts"; \
+		exit 1; \
+	fi
+	@cat scripts/templates/$(TYPE).md
+
+# =============================================================================
 # LOGS & DEBUGGING
 # =============================================================================
 

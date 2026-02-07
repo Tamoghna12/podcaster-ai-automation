@@ -265,22 +265,24 @@ async def create_podcast_project(
         # Parse script
         parser = podcast.PodcastScriptParser()
         metadata, segments = parser.parse(script_content)
-        
+
         # Create story for the podcast
         from .models import StoryCreate
+        title = metadata.get("title", "Untitled Podcast")
+        description = metadata.get("description")
         story_data = StoryCreate(
-            name=metadata.title,
-            description=metadata.description or f"Podcast: {metadata.title}"
+            name=title,
+            description=description or f"Podcast: {title}"
         )
         story = await create_story(story_data, db)
-        
+
         # Create project in database
         project = DBPodcastProject(
             id=str(uuid.uuid4()),
-            name=metadata.title,
-            description=metadata.description,
+            name=title,
+            description=description,
             script_content=script_content,
-            metadata_json=json.dumps(metadata.dict()),
+            metadata_json=json.dumps(metadata),
             pipeline_state="idle",
             current_segment_index=0,
             total_segments=len(segments),
@@ -369,10 +371,10 @@ async def update_podcast_project(
             metadata, segments = parser.parse(script_content)
             
             # Update project
-            project.name = metadata.title
-            project.description = metadata.description
+            project.name = metadata.get("title", "Untitled Podcast")
+            project.description = metadata.get("description")
             project.script_content = script_content
-            project.metadata_json = json.dumps(metadata.dict())
+            project.metadata_json = json.dumps(metadata)
             
             # Delete old story items
             if project.story_id:

@@ -288,34 +288,37 @@ class PodcastOrchestrator:
             self.db.commit()
             raise
     
-    async def _generate_segment(self, segment: DBPodcastSegment):
-        """Generate audio for single segment with persistence."""
-        
+    async def _generate_segment(self, segment: DBPodcastSegment, retry_count: int = 0, max_retries: int = 2):
+        """Generate audio for single segment with persistence and retry logic."""
+
         # Skip non-text segments
         if segment.marker_type != "text":
             segment.status = "completed"
             self.db.commit()
             return
-        
+
         # Update segment status
         segment.status = "generating"
         segment.error_message = None
         self.db.commit()
-        
+
         # Update progress
         self._update_progress()
-        
+
         try:
             # Parse generation settings
             gen_settings = json.loads(segment.generation_settings) if segment.generation_settings else {}
             
             # Get model size from segment (per-segment configuration)
             model_size = segment.model_size or "1.7B"
-            
-            # Load model if different size
+
+            # Load model - always check and load if needed (handles first run + size changes)
             tts_model = get_tts_model()
-            if hasattr(tts_model, '_current_model_size') and tts_model._current_model_size != model_size:
+            current_size = getattr(tts_model, '_current_model_size', None)
+            if current_size is None or current_size != model_size:
+                print(f"  Loading TTS model ({model_size})...")
                 await tts_model.load_model_async(model_size)
+                print(f"  Model loaded")
             
             # Get voice prompt
             voice_prompt = await self._get_voice_prompt(segment.profile_id)
@@ -330,25 +333,26 @@ class PodcastOrchestrator:
             )
             
             # Save generation to database
-            generation = await create_generation(
+            generation_response = await create_generation(
                 profile_id=segment.profile_id,
                 text=segment.text,
                 language="en",
-                model_size=model_size,
-                audio_path="",  # Will be set by save_audio
+                audio_path="",  # Will be set after save_audio
                 duration=len(audio) / sample_rate,
+                seed=None,
+                db=self.db,
                 instruct=gen_settings.get('instruct'),
-                db=self.db
             )
-            
+
             # Save audio file
             from . import config
             generations_dir = config.get_generations_dir()
-            audio_filename = f"{generation.id}.wav"
+            audio_filename = f"{generation_response.id}.wav"
             audio_path = str(generations_dir / audio_filename)
             save_audio(audio, audio_path, sample_rate)
-            
-            # Update generation with audio path
+
+            # Update generation with audio path - must query DB object
+            generation = self.db.query(DBGeneration).filter_by(id=generation_response.id).first()
             generation.audio_path = audio_path
             self.db.commit()
             
@@ -366,9 +370,7 @@ class PodcastOrchestrator:
                     start_time_ms=0,  # Will be updated later
                     trim_start_ms=0,
                     trim_end_ms=0,
-                    volume=1.0,
                     created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
                 )
                 self.db.add(story_item)
             
@@ -381,17 +383,33 @@ class PodcastOrchestrator:
             self.db.commit()
         
         except Exception as e:
-            # Mark segment as failed
-            segment.status = "failed"
-            segment.error_message = str(e)
-            self.project.failed_count += 1
-            self.db.commit()
-            
-            # Pause pipeline
-            self.project.pipeline_state = "paused"
-            self.db.commit()
-            
-            raise
+            error_msg = str(e)
+
+            # Retry logic
+            if retry_count < max_retries:
+                retry_num = retry_count + 1
+                print(f"  Segment {segment.segment_order} failed (attempt {retry_num}/{max_retries + 1}): {error_msg}")
+                print(f"  Retrying...")
+
+                # Wait a bit before retry
+                import asyncio
+                await asyncio.sleep(2)
+
+                # Retry the segment
+                return await self._generate_segment(segment, retry_count=retry_num, max_retries=max_retries)
+            else:
+                # Max retries exceeded - mark as failed
+                print(f"  Segment {segment.segment_order} failed after {max_retries + 1} attempts: {error_msg}")
+                segment.status = "failed"
+                segment.error_message = error_msg
+                self.project.failed_count += 1
+                self.db.commit()
+
+                # Pause pipeline so user can investigate
+                self.project.pipeline_state = "paused"
+                self.db.commit()
+
+                raise
     
     async def _get_voice_prompt(self, profile_id: Optional[str]) -> dict:
         """Get voice prompt for profile."""
@@ -455,7 +473,7 @@ class PodcastOrchestrator:
         
         # Calculate sequential timecodes
         current_time_ms = 0
-        gap_between_segments = 300  # 300ms gap between segments
+        gap_between_segments = 100  # 100ms gap (crossfade will smooth transitions)
         
         for segment in all_segments:
             if segment.marker_type == "text" and segment.generation_id:
@@ -508,9 +526,7 @@ class PodcastOrchestrator:
                 start_time_ms=0,  # Will be calculated in _update_story_timecodes
                 trim_start_ms=0,
                 trim_end_ms=0,
-                volume=1.0,
                 created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
             )
             self.db.add(story_item)
             self.db.commit()

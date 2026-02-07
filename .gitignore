@@ -57,3 +57,10 @@ tauri/src-tauri/binaries/*
 tmp/
 temp/
 *.tmp
+
+# Test files and outputs
+test_output.*
+test_podcast.md
+test_podcast2.md
+output/
+profiles/

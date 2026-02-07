@@ -1,0 +1,8 @@
+{
+  "model_size": "1.7B",
+  "output_dir": ".",
+  "crossfade_ms": 100,
+  "gap_ms": 100,
+  "max_retries": 2,
+  "format": "wav"
+}

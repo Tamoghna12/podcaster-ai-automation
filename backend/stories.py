@@ -843,6 +843,7 @@ async def reorder_story_items(
 async def export_story_audio(
     story_id: str,
     db: Session,
+    crossfade_ms: int = 100,
 ) -> Optional[bytes]:
     """
     Export story as single mixed audio file with timecode-based mixing.
@@ -930,24 +931,39 @@ async def export_story_audio(
     # Create output buffer initialized to zeros
     final_audio = np.zeros(total_samples, dtype=np.float32)
 
-    # Mix each audio segment at its timecode position
-    for data in audio_data:
+    # Mix each audio segment at its timecode position with crossfade
+    for i, data in enumerate(audio_data):
         audio = data['audio']
         start_time_ms = data['start_time_ms']
-        
+
         # Calculate start sample index
         start_sample = int((start_time_ms / 1000.0) * sample_rate)
-        
+
+        # Apply crossfade with previous segment if there's overlap
+        if i > 0 and crossfade_ms > 0:
+            prev_data = audio_data[i - 1]
+            prev_end_sample = int(((prev_data['start_time_ms'] + prev_data['duration_ms']) / 1000.0) * sample_rate)
+
+            # Check if segments overlap or are close enough for crossfade
+            gap_samples = start_sample - prev_end_sample
+            if gap_samples < 0 or gap_samples < int((crossfade_ms / 1000.0) * sample_rate):
+                # Apply crossfade
+                crossfade_samples = int((crossfade_ms / 1000.0) * sample_rate)
+                crossfade_samples = min(crossfade_samples, len(audio))
+
+                # Create fade in curve for current segment start
+                fade_in = np.linspace(0, 1, crossfade_samples)
+                audio[:crossfade_samples] *= fade_in
+
         # Ensure we don't exceed buffer bounds
         audio_length = len(audio)
         end_sample = min(start_sample + audio_length, total_samples)
-        
+
         if start_sample < total_samples:
             # Trim audio if it extends beyond buffer
             audio_to_mix = audio[:end_sample - start_sample]
-            
+
             # Mix: add audio to existing buffer (overlapping audio will sum)
-            # Normalize to prevent clipping (simple approach: divide by max)
             final_audio[start_sample:end_sample] += audio_to_mix
 
     # Normalize to prevent clipping

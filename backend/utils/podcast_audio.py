@@ -27,8 +27,13 @@ class PodcastAudioMixer:
     async def assemble_podcast(self, project_id: str, metadata: Dict, db) -> bytes:
         """Assemble final podcast with resampled audio."""
         from ..database import Story as DBStory, StoryItem as DBStoryItem, Generation as DBGeneration
-        
-        segments = db.query(DBStoryItem, DBGeneration).join(
+
+        # Safety check for metadata
+        if metadata is None:
+            metadata = {}
+
+        # Use LEFT OUTER JOIN to include marker items with generation_id=None
+        segments = db.query(DBStoryItem, DBGeneration).outerjoin(
             DBGeneration, DBStoryItem.generation_id == DBGeneration.id
         ).filter(
             DBStoryItem.story_id == metadata.get('story_id')
@@ -45,7 +50,7 @@ class PodcastAudioMixer:
         for item in all_segments:
             if item[1] is None:
                 continue
-            audio = self._load_audio(item[1].audio_path, self.target_sample_rate)
+            audio = self._load_audio(item[1].audio_path)
             
             trim_start = item[0].trim_start_ms or 0
             trim_end = item[0].trim_end_ms or 0
@@ -57,22 +62,27 @@ class PodcastAudioMixer:
             
             start_sample = int((item[0].start_time_ms / 1000) * self.target_sample_rate)
             end_sample = min(start_sample + len(audio), total_samples)
-            
+
             if start_sample < total_samples and end_sample > start_sample:
                 slice_end = min(end_sample, total_samples)
-                final_audio[start_sample:slice_end] += audio
+                # Trim audio to match slice length if needed
+                slice_length = slice_end - start_sample
+                audio_to_add = audio[:slice_length]
+                final_audio[start_sample:slice_end] += audio_to_add
                 current_sample = slice_end
         
-        if metadata.get('background_music', {}).get('enabled'):
+        background_music = metadata.get('background_music') or {}
+        if background_music.get('enabled'):
             final_audio = await self._mix_background_music_resampled(
                 final_audio,
-                metadata['background_music']
+                background_music
             )
-        
-        if metadata.get('sound_effects'):
+
+        sound_effects = metadata.get('sound_effects') or []
+        if sound_effects:
             final_audio = self._insert_sound_effects_resampled(
                 final_audio,
-                metadata['sound_effects'],
+                sound_effects,
                 all_segments
             )
         
@@ -81,41 +91,27 @@ class PodcastAudioMixer:
         return self._audio_to_wav_bytes(final_audio, self.target_sample_rate)
     
     def _add_intro_outro(self, segments: List, metadata: Dict, db) -> List:
-        """Add intro and outro segments if configured."""
-        result = segments.copy()
-        
-        intro_config = metadata.get('intro')
-        if intro_config and intro_config.get('enabled'):
-            intro_item = {
-                'start_time_ms': 0,
-                'trim_start_ms': 0,
-                'trim_end_ms': 0,
-                'audio_path': f"placeholder_intro_{hash(intro_config.get('text', ''))}.wav"
-            }
-            result.insert(0, intro_item)
-        
-        outro_config = metadata.get('outro')
-        if outro_config and outro_config.get('enabled'):
-            outro_item = {
-                'start_time_ms': 0,
-                'trim_start_ms': 0,
-                'trim_end_ms': 0,
-                'audio_path': f"placeholder_outro_{hash(outro_config.get('text', ''))}.wav"
-            }
-            result.append(outro_item)
-        
-        return result
+        """Add intro and outro segments if configured.
+
+        Note: Intro/outro audio must be pre-generated as segments in the pipeline.
+        This method is a placeholder for future dedicated intro/outro generation.
+        """
+        # Return segments as-is; intro/outro are handled as regular segments
+        # in the pipeline when included in the markdown script.
+        return list(segments)
     
     def _calculate_total_duration(self, segments: List) -> int:
         """Calculate total duration from segments."""
         if not segments:
             return 0
-        
+
         max_end_time = 0
-        for item, _ in segments:
-            end_time = item.start_time_ms + int(item.duration * 1000)
+        for story_item, generation in segments:
+            if generation is None:
+                continue
+            end_time = story_item.start_time_ms + int(generation.duration * 1000)
             max_end_time = max(max_end_time, end_time)
-        
+
         return max_end_time
     
     async def _mix_background_music_resampled(self, audio: np.ndarray, bg_config: Dict) -> np.ndarray:
@@ -157,36 +153,36 @@ class PodcastAudioMixer:
     
     def _insert_sound_effects_resampled(self, audio: np.ndarray, sound_effects: Dict, segments: List) -> np.ndarray:
         """Insert sound effects with automatic resampling."""
-        
+
         result_audio = audio.copy()
-        
-        for item, _ in segments:
-            marker_type = getattr(item[0], 'marker_type', 'text')
-            marker_value = getattr(item[0], 'marker_value', None)
-            
+
+        for story_item, generation in segments:
+            marker_type = getattr(story_item, 'marker_type', 'text')
+            marker_value = getattr(story_item, 'marker_value', None)
+
             if marker_type == 'sound_effect' and marker_value and marker_value in sound_effects:
                 sfx_file = sound_effects[marker_value]
-                
+
                 try:
                     sfx_audio, original_sr = librosa.load(sfx_file, sr=None, mono=True)
                 except Exception as e:
                     print(f"Warning: Failed to load sound effect {sfx_file}: {e}")
                     continue
-                
+
                 if original_sr != self.target_sample_rate:
                     sfx_audio = librosa.resample(
                         sfx_audio,
                         orig_sr=original_sr,
                         target_sr=self.target_sample_rate
                     )
-                
-                start_sample = int((item[0].start_time_ms / 1000) * self.target_sample_rate)
+
+                start_sample = int((story_item.start_time_ms / 1000) * self.target_sample_rate)
                 end_sample = min(start_sample + len(sfx_audio), len(result_audio))
-                
+
                 if start_sample < len(result_audio) and end_sample > start_sample:
                     slice_end = min(end_sample, len(result_audio))
                     result_audio[start_sample:slice_end] += sfx_audio
-        
+
         return result_audio
     
     def _load_audio(self, audio_path: str) -> np.ndarray:
